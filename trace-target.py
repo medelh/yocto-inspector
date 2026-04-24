@@ -100,7 +100,7 @@ def build_indexes(root):
     reverse_inherit = defaultdict(list)
     
     # Process all recipe and class files
-    for f in find_files(root, [".bb", ".bbclass", ".bbappend"]):
+    for f in find_files(root, [".bb", ".bbclass", ".bbappend", "inc"]):
         provides, inherits = parse_file_recursive(f, root)
         
         for p in provides:
