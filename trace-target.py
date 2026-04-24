@@ -18,8 +18,8 @@ def find_files(root, suffixes):
                 yield os.path.join(base, f)
 
 
-def resolve_path(file_path, include_path, root):
-    """Resolve a require/include path relative to the including file and root."""
+def resolve_path(file_path, include_path, root, all_files):
+    """Resolve a require/include path by substring matching against all_files."""
     candidates = []
     
     # 1. Relative to the file that includes it
@@ -34,15 +34,23 @@ def resolve_path(file_path, include_path, root):
         candidates.append(os.path.join(file_dir, include_path + '.inc'))
         candidates.append(os.path.join(root, include_path + '.inc'))
     
-    # Return first existing candidate
+    # 4. Check exact matches first
     for candidate in candidates:
         if os.path.isfile(candidate):
             return candidate
     
+    # 5. Try substring matching against all_files
+    for existing_file in all_files:
+        if existing_file.endswith(include_path):
+            return existing_file
+        # Also try with .inc extension
+        if not include_path.endswith('.inc') and existing_file.endswith(include_path + '.inc'):
+            return existing_file
+    
     return None
 
 
-def parse_file_recursive(path, root, visited_files=None, depth=0):
+def parse_file_recursive(path, root, all_files, visited_files=None, depth=0):
     """Recursively parse a file and all its requires/includes to extract provides and inherits."""
     if visited_files is None:
         visited_files = set()
@@ -73,9 +81,9 @@ def parse_file_recursive(path, root, visited_files=None, depth=0):
                 m = REQUIRE_RE.match(line)
                 if m:
                     req_path = m.group(1).strip()
-                    resolved = resolve_path(path, req_path, root)
+                    resolved = resolve_path(path, req_path, root, all_files)
                     if resolved:
-                        sub_provides, sub_inherits = parse_file_recursive(resolved, root, visited_files, depth + 1)
+                        sub_provides, sub_inherits = parse_file_recursive(resolved, root, all_files, visited_files, depth + 1)
                         provides += sub_provides
                         inherits += sub_inherits
                 
@@ -83,9 +91,9 @@ def parse_file_recursive(path, root, visited_files=None, depth=0):
                 m = INCLUDE_RE.match(line)
                 if m:
                     inc_path = m.group(1).strip()
-                    resolved = resolve_path(path, inc_path, root)
+                    resolved = resolve_path(path, inc_path, root, all_files)
                     if resolved:
-                        sub_provides, sub_inherits = parse_file_recursive(resolved, root, visited_files, depth + 1)
+                        sub_provides, sub_inherits = parse_file_recursive(resolved, root, all_files, visited_files, depth + 1)
                         provides += sub_provides
                         inherits += sub_inherits
     except IOError:
@@ -99,9 +107,12 @@ def build_indexes(root):
     provides_index = defaultdict(list)
     reverse_inherit = defaultdict(list)
     
+    # Build a list of all files first (for substring matching)
+    all_files = list(find_files(root, [".bb", ".bbclass", ".bbappend", ".inc"]))
+    
     # Process all recipe and class files
-    for f in find_files(root, [".bb", ".bbclass", ".bbappend", "inc"]):
-        provides, inherits = parse_file_recursive(f, root)
+    for f in all_files:
+        provides, inherits = parse_file_recursive(f, root, all_files)
         
         for p in provides:
             provides_index[p].append(f)
